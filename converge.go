@@ -2,12 +2,11 @@ package converge
 
 import (
 	"context"
-	"sync"
+	"log"
 )
 
 type Converge[T comparable, V any] struct {
-	p          sync.RWMutex
-	l          sync.Mutex
+	p          PriorityMutex
 	pending    []pendingReq[T, V]
 	f          func([]T) (map[T]V, error)
 	requesting chan struct{}
@@ -78,10 +77,8 @@ func (c *Converge[T, V]) Stop() {
 }
 
 func (c *Converge[T, V]) addPending(elms []T, resChan chan ResWrap[T, V]) {
-	c.p.RLock()
-	defer c.p.RUnlock()
-	c.l.Lock()
-	defer c.l.Unlock()
+	c.p.PLock()
+	defer c.p.PUnlock()
 	c.pending = append(c.pending, pendingReq[T, V]{
 		elms:    elms,
 		resChan: resChan,
@@ -91,9 +88,6 @@ func (c *Converge[T, V]) addPending(elms []T, resChan chan ResWrap[T, V]) {
 func (c *Converge[T, V]) clearPending() []pendingReq[T, V] {
 	c.p.Lock()
 	defer c.p.Unlock()
-
-	c.l.Lock()
-	defer c.l.Unlock()
 
 	tmp := c.pending
 	c.pending = make([]pendingReq[T, V], 0, 10)
@@ -131,6 +125,7 @@ func (c *Converge[T, V]) doCall() {
 	if len(pendingReqs) == 0 {
 		return
 	}
+	log.Println("处理数量", len(pendingReqs))
 	dupMap := make(map[T]bool)
 	items := []T{}
 	for _, v := range pendingReqs {

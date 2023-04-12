@@ -17,7 +17,7 @@ func TestNewConverge(t *testing.T) {
 		return res, nil
 	})
 
-	cfg = cfg.WithConcurrent(1)
+	cfg = cfg.WithConcurrent(3)
 
 	c := New[int, int](cfg)
 	defer c.Stop()
@@ -29,7 +29,7 @@ func TestNewConverge(t *testing.T) {
 
 	for i := 0; i < 5000; i++ {
 		go func(n int) {
-			time.Sleep(time.Duration(n) * time.Millisecond)
+			//time.Sleep(time.Duration(n) * time.Millisecond)
 			defer wg.Done()
 			begin := time.Now()
 			_, err := c.Do([]int{n, n + 1, n + 2, n + 3})
