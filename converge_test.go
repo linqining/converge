@@ -8,18 +8,17 @@ import (
 )
 
 func TestNewConverge(t *testing.T) {
-	cfg := NewConfig[int, int](func(elms []int) (map[int]int, error) {
+	c, err := New[int, int](func(elms []int) (map[int]int, error) {
 		time.Sleep(time.Second)
 		res := make(map[int]int)
 		for _, v := range elms {
 			res[v] = 2 * v
 		}
 		return res, nil
-	})
-
-	cfg = cfg.WithConcurrent(3)
-
-	c := New[int, int](cfg)
+	}, NewConfig(10, 5*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer c.Stop()
 	wg := sync.WaitGroup{}
 	wg.Add(5000)
@@ -50,29 +49,34 @@ func TestNewConverge(t *testing.T) {
 	}
 
 	wg.Wait()
-	t.Log("总耗时", atomic.LoadInt64(&totalMillSec))
-	t.Log("少于1s", atomic.LoadInt32(&lessone))
-	t.Log("少于2s", atomic.LoadInt32(&lesstwo))
-	t.Log("少于3s", atomic.LoadInt32(&lessthree))
-
+	tt := atomic.LoadInt64(&totalMillSec)
+	t.Log("total time", atomic.LoadInt64(&totalMillSec))
+	t.Log("< 1s", atomic.LoadInt32(&lessone))
+	t.Log("1s< and <2s", atomic.LoadInt32(&lesstwo))
+	t.Log(">2s", atomic.LoadInt32(&lessthree))
+	t.Log("average time per req", time.Duration(tt)*time.Millisecond/5000)
 }
 
+var num int64
+
 func BenchmarkConverge_Do(b *testing.B) {
-	cfg := NewConfig[int, int](func(elms []int) (map[int]int, error) {
+	c, err := New[int, int](func(elms []int) (map[int]int, error) {
 		time.Sleep(time.Second)
 		res := make(map[int]int)
 		for _, v := range elms {
 			res[v] = 2 * v
 		}
 		return res, nil
-	})
-
-	cfg = cfg.WithConcurrent(10)
-
-	c := New[int, int](cfg)
-	var num int64
-	for i := 0; i < b.N; i++ {
-		doval := int(atomic.AddInt64(&num, 1))
-		c.Do([]int{doval, doval + 1, doval + 2, doval + 3})
+	}, NewConfig(10, 5*time.Millisecond))
+	if err != nil {
+		b.Fatal(err)
 	}
+	defer c.Stop()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			doval := int(atomic.AddInt64(&num, 1))
+			c.Do([]int{doval, doval + 1, doval + 2, doval + 3})
+		}
+	})
 }

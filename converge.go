@@ -2,48 +2,56 @@ package converge
 
 import (
 	"context"
-	"log"
+	"github.com/linqining/prioritymutex"
+	"time"
 )
 
 type Converge[T comparable, V any] struct {
-	p          PriorityMutex
+	p          *prioritymutex.PriorityMutex
 	pending    []pendingReq[T, V]
 	f          func([]T) (map[T]V, error)
 	requesting chan struct{}
 	cancel     context.CancelFunc
 	ctx        context.Context
+	waitDur    time.Duration
 }
 
-type Config[T comparable, V any] struct {
-	batchFunc  func([]T) (map[T]V, error)
-	concurrent int
+type BatchFunc[T comparable, V any] func([]T) (map[T]V, error)
+
+type Config struct {
+	maxInFlight int
+	waitDur     time.Duration
 }
 
-func NewConfig[T comparable, V any](batchFunc func([]T) (map[T]V, error)) *Config[T, V] {
-	return &Config[T, V]{batchFunc: batchFunc, concurrent: 1}
-}
-
-func (c *Config[T, V]) WithConcurrent(concurrent int) *Config[T, V] {
-	if concurrent <= 0 {
-		panic("invalid concurrent")
+func NewConfig(maxInFlight int, waitDur time.Duration) Config {
+	cfg := Config{
+		maxInFlight: maxInFlight,
+		waitDur:     waitDur,
 	}
-	c.concurrent = concurrent
-	return c
+	if maxInFlight <= 0 {
+		cfg.maxInFlight = 1
+	}
+	if cfg.waitDur <= 0 {
+		cfg.waitDur = 0
+	}
+	return cfg
 }
 
-func New[T comparable, V any](cfg *Config[T, V]) *Converge[T, V] {
+func New[T comparable, V any](batchFunc BatchFunc[T, V], cfg Config) (*Converge[T, V], error) {
 	ctx, cancel := context.WithCancel(context.TODO())
 	c := &Converge[T, V]{
+		p:          &prioritymutex.PriorityMutex{},
 		pending:    make([]pendingReq[T, V], 0, 10),
-		f:          cfg.batchFunc,
-		requesting: make(chan struct{}, cfg.concurrent),
+		f:          batchFunc,
+		requesting: make(chan struct{}, int(cfg.maxInFlight)),
 		cancel:     cancel,
 		ctx:        ctx,
+		waitDur:    cfg.waitDur,
 	}
-	for i := 0; i < cfg.concurrent; i++ {
+	for i := 0; i < int(cfg.maxInFlight); i++ {
 		go c.run()
 	}
-	return c
+	return c, nil
 }
 
 type Result[V any] struct {
@@ -88,7 +96,7 @@ func (c *Converge[T, V]) addPending(elms []T, resChan chan ResWrap[T, V]) {
 func (c *Converge[T, V]) clearPending() []pendingReq[T, V] {
 	c.p.Lock()
 	defer c.p.Unlock()
-
+	time.Sleep(c.waitDur)
 	tmp := c.pending
 	c.pending = make([]pendingReq[T, V], 0, 10)
 	return tmp
@@ -125,7 +133,6 @@ func (c *Converge[T, V]) doCall() {
 	if len(pendingReqs) == 0 {
 		return
 	}
-	log.Println("处理数量", len(pendingReqs))
 	dupMap := make(map[T]bool)
 	items := []T{}
 	for _, v := range pendingReqs {
