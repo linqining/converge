@@ -15,7 +15,7 @@ func TestNewConverge(t *testing.T) {
 			res[v] = 2 * v
 		}
 		return res, nil
-	}, NewConfig(10, 5*time.Millisecond))
+	}, NewConfig(10, 10*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)
 	}

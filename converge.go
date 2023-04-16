@@ -55,9 +55,12 @@ func New[T comparable, V any](batchFunc BatchFunc[T, V], cfg Config) (*Converge[
 }
 
 type Result[V any] struct {
-	val    V
-	exist  bool
-	shared bool
+	// Val represent the query result
+	Val V
+	// Exist indicate whether val is present in the result set
+	Exist bool
+	// Shared indicate whether val is shared with other goroutine
+	Shared bool
 }
 
 type ResWrap[T comparable, V any] struct {
@@ -153,9 +156,9 @@ func (c *Converge[T, V]) doCall() {
 		for _, k := range v.elms {
 			val, ok := resMap[k]
 			result[k] = Result[V]{
-				val:    val,
-				exist:  ok,
-				shared: dupMap[k],
+				Val:    val,
+				Exist:  ok,
+				Shared: dupMap[k],
 			}
 		}
 		v.resChan <- ResWrap[T, V]{
